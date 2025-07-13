@@ -111,3 +111,49 @@ def multislice(potential, energy, sampling, slice_thickness=None, device='cpu'):
     # Convert back to numpy array - correct method
     ew = ew.detach().cpu().numpy()
     return ew
+
+def multislice_1d(potential_1d, energy, sampling, slice_thickness=None, device='cpu'):
+    """
+    Calculate the exit wave function for a 1D potential using multislice method.
+    
+    :param potential_1d: The 1D potential array (numpy array or torch tensor)
+    :param energy: The energy of the electron beam, in eV
+    :param sampling: The sampling rate
+    :param slice_thickness: The thickness of each slice (optional)
+    :param device: Device to run computations on ('cpu', 'cuda', etc.)
+    :return: The exit wave function as a numpy array
+    """
+    # Conduct multislice calculation on one dimension
+    if not isinstance(potential_1d, torch.Tensor):
+        potential_1d = torch.tensor(potential_1d, dtype=torch.complex64, device=device)
+    else:
+        potential_1d = potential_1d.to(device=device, dtype=torch.complex64)
+    energy_J = energy * e  # Convert eV to Joules
+    rest_energy = m_e * c**2  # Rest energy in Joules
+    total_energy = energy_J + rest_energy  # Total energy
+    momentum = np.sqrt(total_energy**2 - rest_energy**2) / c
+    wavelength = (h / momentum) * 1e10  # Convert m to Angstroms
+    # Initialize exit wave
+    ew = torch.ones((potential_1d.shape[1],), dtype=torch.complex64, device=device)
+    m = ew.shape[0]
+    kx = torch.fft.fftfreq(m, sampling, device=device)
+    k2 = kx ** 2
+    num_slice = potential_1d.shape[0]
+    me = m_e * (1 + e*energy/(m_e * c**2))
+    sigma = 2*np.pi*me*(wavelength/1e20)*e/h**2
+    if slice_thickness is None:
+        thickness = potential_1d.shape[0] * sampling 
+        slice_thickness = thickness/num_slice
+    # Pre-compute the propagation kernel
+    kernel = torch.exp(-1j * k2 * np.pi * wavelength * slice_thickness)
+    for i in tqdm(range(num_slice)):
+        # Phase shift due to potential
+        phase_shift = torch.exp(1j * sigma * potential_1d[i, :])
+        ew = ew * phase_shift
+        
+        # Propagation step using FFT
+        ew_fft = torch.fft.fft(ew)
+        ew = torch.fft.ifft(ew_fft * kernel)
+    # Convert back to numpy array
+    ew = ew.detach().cpu().numpy()
+    return ew
