@@ -204,52 +204,6 @@ def multislice_1d(potential_1d, energy, sampling, slice_thickness=None, device='
     ew = ew.detach().cpu().numpy()
     return ew
 
-def density_matrix_multislice(potential_1d, transitions, energy, sampling, slice_thickness=None, device='cpu', transition_mode="potential"):
-    """
-    Calculate the exit wave function using multislice method with PyTorch for acceleration.
-    
-    :param potential: The potential array (can be numpy array or torch tensor)
-    :param energy: The energy of the electron beam, in eV
-    :param sampling: The sampling rate
-    :param slice_thickness: The thickness of each slice (optional)
-    :param device: Device to run the computation on ('cpu' or 'cuda')
-    :return: The exit wave function as a torch tensor
-    """
-    if not isinstance(potential_1d, torch.Tensor):
-        potential_1d = torch.tensor(potential_1d, dtype=torch.float32, device=device)
-    if not isinstance(transitions, torch.Tensor):
-        transitions = torch.tensor(transitions, dtype=torch.complex64, device=device)
-    # Initialize the wave function
-    gridsize = potential_1d.shape[1]   
-    waves = torch.ones((gridsize,), dtype=torch.complex64, device=device)
-    density_matrix = torch.zeros((gridsize, gridsize), dtype=torch.complex64, device=device)
-    
-    # Propagate through each slice
-    if slice_thickness is None:
-        slice_thickness = 1.0  # Default thickness if not specified
-    
-    sigma = energy2sigma(energy)  # Convert energy to sigma in m^2
-
-    for i in range(potential_1d.shape[0]):
-        phase_shift = torch.exp(1j * sigma * potential_1d[i, :])
-        phase_shift_dm = torch.outer(phase_shift, phase_shift.conj())
-        # Apply the phase shift for the elastic waves
-        waves = waves * phase_shift
-        # Propagate the waves
-        waves = propagate_1d(waves, slice_thickness, sampling, energy)
-        # Update the density matrix
-        for transition in transitions:
-            if transition_mode == "potential":     
-                waves_transition = transition * waves
-                density_matrix = density_matrix + torch.outer(waves_transition, waves_transition.conj())
-            else:
-                dm_transition = transition * torch.outer(waves, waves.conj())
-                density_matrix = density_matrix + dm_transition
-        density_matrix = density_matrix * phase_shift_dm
-        density_matrix = propagate_1d_density_matrix(density_matrix, slice_thickness, sampling, energy)
-    
-    return density_matrix
-
 def transitional_multislice(potential, energy, sampling, slice_thickness=None, device='cpu'):
     """
     Calculate the exit wave function using multislice method with PyTorch for acceleration.
